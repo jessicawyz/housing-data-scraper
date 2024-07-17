@@ -12,7 +12,11 @@ from bs4 import BeautifulSoup
 
 file_path = r"C:\Users\jessi\OneDrive\Desktop\PropertyGuru data\housing_data.xlsx"
 base_url = "https://www.propertyguru.com.sg/property-for-sale"
-url_params = "?market=residential&freetext=tanjong+katong&listing_type=sale&property_type=N&property_type_code[]=CONDO&property_type_code[]=APT&property_type_code[]=WALK&property_type_code[]=CLUS&property_type_code[]=EXCON&maxprice=4000000&beds[]=3&beds[]=4&tenure[]=F&search=true"
+url_params_list = [
+    "?market=residential&listing_type=sale&freetext=parvis&search=true",
+    "?market=residential&listing_type=sale&freetext=waterfall+gardens&search=true",
+    "?market=residential&listing_type=sale&freetext=rivergate&search=true"
+]
 chromedriver_path = r"C:\chromedriver\chromedriver-win32\chromedriver.exe"
 
 def setup_driver():
@@ -40,38 +44,48 @@ def extract_record(item):
         return None
 
 all_records = []
-current_page = 1
-valid_page = True
 
-while valid_page:
-    driver = setup_driver()
-    try:
-        driver.get(f"{base_url}/{current_page}{url_params}")
-        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, 'div[class*="listing-card listing-id"]')))
-        html = driver.page_source
-        soup = BeautifulSoup(html, 'html.parser')
-        all_results = soup.select('div[class*="listing-card listing-id"]')
-        results = [item for item in all_results if 'promoted' not in item['class']]
+for url_params in url_params_list:
+    current_page = 1
+    valid_page = True
 
-        if not results:
+    while valid_page:
+        driver = setup_driver()
+        try:
+            driver.get(f"{base_url}/{current_page}{url_params}")
+            WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, 'div[class*="listing-card listing-id"]')))
+            html = driver.page_source
+            soup = BeautifulSoup(html, 'html.parser')
+            all_results = soup.select('div[class*="listing-card listing-id"]')
+            results = [item for item in all_results if 'promoted' not in item['class']]
+
+            if not results:
+                valid_page = False
+                print(f"No listings or end of listings for {url_params}.")
+                continue
+
+            for item in results:
+                record = extract_record(item)
+                if record:
+                    all_records.append(record)
+
+            print(f"Processed page {current_page} for {url_params}")
+
+            # Check for next page
+            next_button = soup.select_one('a[class*="pagination-next"]')
+            if next_button and 'disabled' not in next_button.get('class', []):
+                current_page += 1
+            else:
+                valid_page = False
+                print("No more pages.")
+
+        except Exception as e:
+            print("An error occurred:", e)
             valid_page = False
-            print("No listings or end of listings.")
-            continue
 
-        for item in results:
-            record = extract_record(item)
-            if record:
-                all_records.append(record)
-
-        print(f"Processed page {current_page}")
-        current_page += 1
-
-    except Exception as e:
-        print("An error occurred:", e)
-        valid_page = False
-
-    finally:
-        driver.quit()
+        finally:
+            driver.quit()
 
 df = pd.DataFrame(all_records)
 df.to_excel(file_path, index=False)
+print("Data saved to Excel.")
